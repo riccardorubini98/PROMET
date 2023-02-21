@@ -123,6 +123,20 @@ class Promet(object):
         tensor_dataloader = torch.utils.data.DataLoader(tensor_dataset, batch_size=batch_size, shuffle=shuffle)
         return tensor_dataloader
     
+    def optimzer_promet(self, lr, wd):
+        no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
+        param_optimizer_plm= list(model.plm.named_parameters())
+        optimizer_grouped_parameters = [
+            {'params': [p for n, p in param_optimizer_plm
+                        if not any(nd in n for nd in no_decay)], 'lr':lr, 'weight_decay': 1e-2, 'correct_bias':True},
+            {'params': [p for n, p in param_optimizer_plm
+                        if any(nd in n for nd in no_decay)], 'lr':lr, 'weight_decay': 0, 'correct_bias':True},
+            {'params': [model.clf_layer.weight], 'lr':lr, 'weight_decay': wd, 'correct_bias':True},
+            {'params': [model.clf_layer.bias], 'lr':lr, 'weight_decay': 0, 'correct_bias':True}
+                        ]
+        optim = torch.optim.AdamW(optimizer_grouped_parameters)
+        return optim
+    
     def train_loop(self, train_loader, val_loader, epochs, loss_fn, optimizer, scheduler, val_epoch=1):
         # logs for tensorboard
         writer = SummaryWriter(os.path.join(self.save_dir, 'tb_logs', self.model_name))

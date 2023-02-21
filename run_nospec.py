@@ -4,6 +4,7 @@ from utils import one_hot_encoder
 from torch import nn
 import torch
 import os
+from transformers import get_linear_schedule_with_warmup
 
 class PrometNoSpec(Promet):
     
@@ -59,17 +60,7 @@ class PrometNoSpec(Promet):
             pass
         
         # optimizer
-        no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
-        param_optimizer_plm= list(model.plm.named_parameters())
-        optimizer_grouped_parameters = [
-            {'params': [p for n, p in param_optimizer_plm
-                        if not any(nd in n for nd in no_decay)], 'lr':lr, 'weight_decay': 1e-2, 'correct_bias':True},
-            {'params': [p for n, p in param_optimizer_plm
-                        if any(nd in n for nd in no_decay)], 'lr':lr, 'weight_decay': 0, 'correct_bias':True},
-            {'params': [model.clf_layer.weight], 'lr':lr, 'weight_decay': wd, 'correct_bias':True},
-            {'params': [model.clf_layer.bias], 'lr':lr, 'weight_decay': 0, 'correct_bias':True}
-                        ]
-        optim = torch.optim.AdamW(optimizer_grouped_parameters)
+        optim = self.optimzer_promet(lr, wd)
         
         # lr schedule
         num_training_steps = epochs * self.len_train / batch_size
