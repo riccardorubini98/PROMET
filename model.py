@@ -1,12 +1,24 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
-from transformers import AutoModel, AutoTokenizer, get_linear_schedule_with_warmup
-from data import data_prompt_loader
+from transformers import AutoModel, AutoTokenizer
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 import os
-from sklearn.metrics import f1_score, accuracy_score
+from sklearn.metrics import f1_score
+import numpy as np
+from transformers import logging
+logging.set_verbosity_error()
+
+# reproducibility
+def set_seed(seed):
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.enabled = False
+    np.random.seed(1)
+    torch.manual_seed(1)
+    torch.cuda.manual_seed(1)
+    os.environ['PYTHONHASHSEED'] = str(seed)
 
 # define gradient multiply layer
 class GradMultiplyFunction(torch.autograd.Function):
@@ -68,6 +80,7 @@ class Promet(object):
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.model_name = model_name
         self.save_dir = save_dir
+        self.plm_name = plm_name
         
     def prompt_tokenizer(self, example):
         """ add prompt template to example and then tokenize
@@ -123,7 +136,7 @@ class Promet(object):
         tensor_dataloader = torch.utils.data.DataLoader(tensor_dataset, batch_size=batch_size, shuffle=shuffle)
         return tensor_dataloader
     
-    def optimzer_promet(self, lr, wd):
+    def optimzer_promet(self, model, lr, wd):
         no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
         param_optimizer_plm= list(model.plm.named_parameters())
         optimizer_grouped_parameters = [
@@ -137,7 +150,7 @@ class Promet(object):
         optim = torch.optim.AdamW(optimizer_grouped_parameters)
         return optim
     
-    def train_loop(self, train_loader, val_loader, epochs, loss_fn, optimizer, scheduler, val_epoch=1):
+    def train_loop(self, model, train_loader, val_loader, epochs, loss_fn, optimizer, scheduler, val_epoch=1):
         # logs for tensorboard
         writer = SummaryWriter(os.path.join(self.save_dir, 'tb_logs', self.model_name))
         model = model.to(self.device)

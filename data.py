@@ -2,6 +2,7 @@ import json
 import numpy as np
 from nltk.tokenize.treebank import TreebankWordDetokenizer
 import torch
+from sklearn.preprocessing import MultiLabelBinarizer
 
 
 def import_json_examples(file_name):
@@ -36,7 +37,7 @@ def import_examples(file_name):
     """
     examples_raw = import_json_examples(file_name)
     examples = examples_preprocessing(examples_raw)
-    y =  np.array([ex['mention_type'][-1] for ex in examples])
+    y =  np.array([[ex['mention_type'][-1]] for ex in examples])
     return examples, y
 
 def prompt_tokenizer(example, template, tokenizer, max_lenght=128):
@@ -92,3 +93,32 @@ def data_prompt_loader(examples, y, template, tokenizer, max_lenght=128, batch_s
     # create dataloader
     tensor_dataloader = torch.utils.data.DataLoader(tensor_dataset, batch_size=batch_size, shuffle=shuffle)
     return tensor_dataloader
+
+def one_hot_encoder(y_train, y_val, y_test, other_class=''):
+    """ formatting target in one-hot encoding
+    
+    return:
+        - encoded target
+        - labels_names: list with class name
+    """
+    if len(other_class)>0:
+        # other_class encoded with [0,0,...,0]
+        y_unique = np.unique(y_train)
+        mlb = MultiLabelBinarizer(classes = [y for y in y_unique if y != other_class])
+        mlb = MultiLabelBinarizer()
+        y_train_e = torch.tensor(mlb.fit_transform(y_train))
+        y_val_e = torch.tensor(mlb.transform(y_val))
+        y_test_e = torch.tensor(mlb.transform(y_test))
+        # other class in last position
+        labels_names = list(mlb.classes_) + [other_class]
+        labels_names = [[name] for name in labels_names]
+    else:
+        mlb = MultiLabelBinarizer()
+        mlb = MultiLabelBinarizer()
+        y_train_e = torch.tensor(mlb.fit_transform(y_train))
+        y_val_e = torch.tensor(mlb.transform(y_val))
+        y_test_e = torch.tensor(mlb.transform(y_test))
+        labels_names = list(mlb.classes_)
+        labels_names = [[name] for name in labels_names]
+    
+    return (y_train_e, y_val_e, y_test_e), np.array(labels_names)
