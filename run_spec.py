@@ -28,7 +28,6 @@ class PrometSpec(Promet):
 
     def eval_model(self, model, input_ids, attention_mask, mask_ids, y, loss_fn):
         output = model(input_ids, attention_mask, mask_ids)
-        y = y.argmax(dim=1) #one_hot -> single label
         loss = loss_fn(output, y.float())
         posterior = torch.sigmoid(output)
         # pred mulit-label without /other class
@@ -116,7 +115,7 @@ class PrometSpec(Promet):
     
     def predict(self, examples, threshold=None, verbose=True):
         logits = self.predict_logits(examples, verbose=verbose)
-        posterior = torch.sigmoid(posterior).numpy()
+        posterior = torch.sigmoid(logits).numpy()
         if not threshold:
             # classification thresholds set to 0.5
             clf_thresholds = np.repeat(0.5, posterior.shape[1])
@@ -137,7 +136,7 @@ class PrometSpec(Promet):
 if __name__ == "__main__":
     
     # PARAMTERS
-    with open('config_nospec.yaml', 'r') as f:
+    with open('config_spec.yaml', 'r') as f:
         config = yaml.safe_load(f)
         
     PLM_NAME = config['MODEL']['PLM_NAME']
@@ -148,13 +147,13 @@ if __name__ == "__main__":
     SAVE_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), config['DATA']['SAVE_DIR'])
     ADAPTERS = config['MODEL']['ADAPTERS']
     # Hp
-    BATCH_SIZE = config['TRAIN']['BATCH_SIZE']
-    LR = float(config['TRAIN']['LR'])
-    LAMBD = float(config['TRAIN']['LAMBD'])
-    WD = float(config['TRAIN']['WD'])
-    EPOCHS = config['TRAIN']['EPOCHS']
-    SEED = config['TRAIN']['SEED']
-    N_MASK = config['TRAIN']['N_MASK']
+    BATCH_SIZE = config['TRAIN_FIRST']['BATCH_SIZE']
+    LR = float(config['TRAIN_FIRST']['LR'])
+    LAMBD = float(config['TRAIN_FIRST']['LAMBD'])
+    WD = float(config['TRAIN_FIRST']['WD'])
+    EPOCHS = config['TRAIN_FIRST']['EPOCHS']
+    SEED = config['TRAIN_FIRST']['SEED']
+    N_MASK = config['TRAIN_FIRST']['N_MASK']
     
     # reproduciblity
     set_seed(SEED)
@@ -163,47 +162,50 @@ if __name__ == "__main__":
     print('Load Data...')
     train_examples, y_train = import_examples(TRAIN_FILE)
     val_examples, y_val = import_examples(VAL_FILE)
-    test_examples, y_test = import_examples(TEST_FILE)
+    test_examples, y_test = import_examples(VAL_FILE)
     print('Data loaded')
     
     # first classification layer (on coarse types)
     print('FIRST LAYER')
     # take only father type
-    y_train_c = np.array(['/' + label.split('/')[1] for label in y_train])
-    y_val_c = np.array(['/' + label.split('/')[1] for label in y_val])
-    y_val_c = np.array(['/' + label.split('/')[1] for label in y_val])
+    y_train_c = np.array([['/' + label[-1].split('/')[1]] for label in y_train])
+    y_val_c = np.array([['/' + label[-1].split('/')[1]] for label in y_val])
+    y_test_c = np.array([['/' + label[-1].split('/')[1]] for label in y_test])
     # format target
     (y_train_c, y_val_c, y_test_c), labels_names_c = one_hot_encoder(y_train_c, y_val_c, y_test_c, other_class='/other')
     # define model
-    promet_nospec = PrometNoSpec(plm_name=PLM_NAME, n_mask=N_MASK, mask_token=MASK_TOKEN, 
+    promet_first = PrometSpec(plm_name=PLM_NAME, n_mask=N_MASK, mask_token=MASK_TOKEN, 
                            model_name='first_layer', save_dir=SAVE_DIR)
     # fit mode
     print('Fit model')
-    promet_nospec.fit(train_examples, val_examples, y_train_c, y_val_c, LR, LAMBD, WD, EPOCHS, BATCH_SIZE,
+    # y[:, :-1] to avoid other class
+    promet_first.fit(train_examples, val_examples, y_train_c[:, :-1], y_val_c[:, :-1], LR, LAMBD, WD, EPOCHS, BATCH_SIZE,
                       adapters=ADAPTERS, n_class=len(labels_names_c)-1)
     
     # validation inference
     print('Validation inference:')
-    y_val_hat = promet_nospec.predict(val_examples)
-    acc, f1_micro, val_df = get_score(y_val, y_val_hat, labels_names)
+    y_val_hat_c = promet_first.predict(val_examples)
+    acc, f1_micro, val_df = get_score(y_val_c, y_val_hat_c, labels_names_c)
     print(f'Validation -> Accuracy: {acc} \t F1-Score: {f1_micro}')
     # write on result file
     with open(os.path.join(SAVE_DIR, 'clf_results.txt'), 'a+') as f:
         f.write((json.dumps(config['DATA'])))
         f.write('\n')
-        f.write(json.dumps(config['MODEL']))
+        f.write(json.dumps(config['TRAIN_FIRST']))
+        f.write('\n')
+        f.write('FIRST LAYER')
         f.write('\n')
         f.write(f'Validation -> Accuracy: {acc} \t F1-Score: {f1_micro}')
         f.write('\n')
     
     # test inference
     print('Test inference:')
-    y_test_hat = promet_nospec.predict(test_examples)
-    acc, f1_micro, test_df = get_score(y_test, y_test_hat, labels_names)
+    y_test_hat_c = promet_first.predict(test_examples)
+    acc, f1_micro, test_df = get_score(y_test_c, y_test_hat_c, labels_names_c)
     print(f'Test -> Accuracy: {acc} \t F1-Score: {f1_micro}')
     # write on result file
     with open(os.path.join(SAVE_DIR, 'clf_results.txt'), 'a+') as f:
         f.write(f'Test -> Accuracy: {acc} \t F1-Score: {f1_micro}')
         f.write('\n')
     # save metric report to csv
-    test_df.to_csv(os.path.join(SAVE_DIR, TRAIN_FILE.split('/')[-1].replace('.json', '.csv')))
+    test_df.to_csv(os.path.join(SAVE_DIR, "first_" + TRAIN_FILE.split('/')[-1].replace('.json', '.csv')))
