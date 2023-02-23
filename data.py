@@ -99,9 +99,9 @@ def add_other_class(y):
     y = np.c_[y, np.zeros(y.shape[0])]
     # if no specialization (i.e. all zeros in a row) -> inference /type/other
     for y_row in y:
-        if np.count_nonzero(y) == 0:
-            y[-1] = 1
-    return torch.tensor(pred)
+        if np.count_nonzero(y_row) == 0:
+            y_row[-1] = 1
+    return torch.tensor(y)
 
 def one_hot_encoder(y_train, y_val, y_test, other_class=''):
     """ formatting target in one-hot encoding
@@ -114,7 +114,6 @@ def one_hot_encoder(y_train, y_val, y_test, other_class=''):
         # other_class encoded with [0,0,...,0]
         y_unique = np.unique(y_train)
         mlb = MultiLabelBinarizer(classes = [y for y in y_unique if y != other_class])
-        mlb = MultiLabelBinarizer()
         y_train_e = add_other_class(mlb.fit_transform(y_train))
         y_val_e = add_other_class(mlb.transform(y_val))
         y_test_e = add_other_class(mlb.transform(y_test))
