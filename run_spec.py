@@ -10,6 +10,9 @@ from score import get_score
 import yaml
 import json
 
+def count_trainable_parameters(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
 class PrometSpec(Promet):
     
     def train_model(self, model, input_ids, attention_mask, mask_ids, y, optimizer, loss_fn):
@@ -68,6 +71,8 @@ class PrometSpec(Promet):
                     p.requires_grad=False
         else:
             pass
+        n_train_par = count_trainable_parameters(model)
+        print(f'Trainable parameters: {n_train_par}')
         # optimizer
         optim = self.optimzer_promet(model, lr, wd)
         # lr schedule

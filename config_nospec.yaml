@@ -2,7 +2,7 @@ DATA:
   TRAIN_FILE : 'dataset/few_nerd/train_S4.json'
   VAL_FILE : 'dataset/few_nerd/dev_S4.json'
   TEST_FILE : 'dataset/few_nerd/test.json'
-  SAVE_DIR : 'results_nospec'
+  SAVE_DIR : 'results_nospec_adapters'
 
 MODEL:
   PLM_NAME : 'roberta-base'
@@ -14,7 +14,7 @@ TRAIN:
   BATCH_SIZE : 8
   LR : 0.0005
   LAMBD : 1e-7
-  WD : 15
+  WD : 10
   EPOCHS : 50
   SEED : 11
   N_MASK : 1
