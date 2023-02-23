@@ -94,6 +94,15 @@ def data_prompt_loader(examples, y, template, tokenizer, max_lenght=128, batch_s
     tensor_dataloader = torch.utils.data.DataLoader(tensor_dataset, batch_size=batch_size, shuffle=shuffle)
     return tensor_dataloader
 
+def add_other_class(y):
+    # add /other vector (all zeros at the beginning)
+    y = np.c_[y, np.zeros(y.shape[0])]
+    # if no specialization (i.e. all zeros in a row) -> inference /type/other
+    for y_row in y:
+        if np.count_nonzero(y) == 0:
+            y[-1] = 1
+    return torch.tensor(pred)
+
 def one_hot_encoder(y_train, y_val, y_test, other_class=''):
     """ formatting target in one-hot encoding
     
@@ -106,14 +115,13 @@ def one_hot_encoder(y_train, y_val, y_test, other_class=''):
         y_unique = np.unique(y_train)
         mlb = MultiLabelBinarizer(classes = [y for y in y_unique if y != other_class])
         mlb = MultiLabelBinarizer()
-        y_train_e = torch.tensor(mlb.fit_transform(y_train))
-        y_val_e = torch.tensor(mlb.transform(y_val))
-        y_test_e = torch.tensor(mlb.transform(y_test))
+        y_train_e = add_other_class(mlb.fit_transform(y_train))
+        y_val_e = add_other_class(mlb.transform(y_val))
+        y_test_e = add_other_class(mlb.transform(y_test))
         # other class in last position
         labels_names = list(mlb.classes_) + [other_class]
         labels_names = [[name] for name in labels_names]
     else:
-        mlb = MultiLabelBinarizer()
         mlb = MultiLabelBinarizer()
         y_train_e = torch.tensor(mlb.fit_transform(y_train))
         y_val_e = torch.tensor(mlb.transform(y_val))

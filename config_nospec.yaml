@@ -1,6 +1,6 @@
 DATA:
-  TRAIN_FILE : 'dataset/few_nerd/train_S0.json'
-  VAL_FILE : 'dataset/few_nerd/dev_S0.json'
+  TRAIN_FILE : 'dataset/few_nerd/train_S4.json'
+  VAL_FILE : 'dataset/few_nerd/dev_S4.json'
   TEST_FILE : 'dataset/few_nerd/test.json'
   SAVE_DIR : 'results_nospec'
 
@@ -12,9 +12,9 @@ MODEL:
 
 TRAIN:
   BATCH_SIZE : 8
-  LR : 1e-3
+  LR : 0.0005
   LAMBD : 1e-7
   WD : 15
-  EPOCHS : 30
+  EPOCHS : 50
   SEED : 11
   N_MASK : 1

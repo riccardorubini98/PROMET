@@ -1,6 +1,7 @@
 from data import data_prompt_loader, import_examples, one_hot_encoder
 from model import Promet, promet_clf, set_seed
 from torch import nn
+import torch.nn.functional as F
 import torch
 import os
 from transformers import get_linear_schedule_with_warmup
@@ -15,8 +16,8 @@ class PrometNoSpec(Promet):
     def train_model(self, model, input_ids, attention_mask, mask_ids, y, optimizer, loss_fn):
         optimizer.zero_grad()
         output = model(input_ids, attention_mask, mask_ids)
-        y = y.argmax(dim=1) #one_hot -> single label
-        loss = loss_fn(output, y)
+        log_score_dist = F.log_softmax(output, dim=-1)
+        loss = loss_fn(log_score_dist, y.float())
         loss.backward()
         optimizer.step()
         posterior = torch.softmax(output, dim=-1)
@@ -27,8 +28,8 @@ class PrometNoSpec(Promet):
 
     def eval_model(self, model, input_ids, attention_mask, mask_ids, y, loss_fn):
         output = model(input_ids, attention_mask, mask_ids)
-        y = y.argmax(dim=1) #one_hot -> single label
-        loss = loss_fn(output, y)
+        log_score_dist = F.log_softmax(output, dim=-1)
+        loss = loss_fn(log_score_dist, y.float())
         posterior = torch.softmax(output, dim=-1)
         pred_label = posterior.argmax(dim=1)
         # prediction in one-hot-encoding
@@ -47,7 +48,7 @@ class PrometNoSpec(Promet):
         train_loader = self.data_prompt_loader(train_examples, y_train, batch_size, shuffle=True)
         val_loader = self.data_prompt_loader(val_examples, y_val, batch_size, shuffle=False)
         # loss
-        loss_fn = nn.CrossEntropyLoss()
+        loss_fn = nn.KLDivLoss(reduction='batchmean')
         # init model
         model = promet_clf(self.plm_name, self.n_class, lambd=lambd)
         # add adapters if needed
@@ -186,6 +187,5 @@ if __name__ == "__main__":
     # write on result file
     with open(os.path.join(SAVE_DIR, 'clf_results.txt'), 'a+') as f:
         f.write(f'Test -> Accuracy: {acc} \t F1-Score: {f1_micro}')
-        f.write('\n')
     # save metric report to csv
     test_df.to_csv(os.path.join(SAVE_DIR, TRAIN_FILE.split('/')[-1].replace('.json', '.csv')))

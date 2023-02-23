@@ -26,7 +26,7 @@ def get_score(y_true, y_pred, labels_names):
     acc = round(accuracy_score(y_true, y_pred),4)*100
     f1_micro = round(f1_score(y_true, y_pred, average='micro', zero_division=0),4)*100
     # get report
-    report = classification_report(y_true, y_pred, target_names=mlb.classes_, output_dict=True)
+    report = classification_report(y_true, y_pred, target_names=mlb.classes_, output_dict=True, zero_division=0)
     df = pd.DataFrame(report).transpose()
     df.reset_index(inplace=True)
     df = df.rename(columns = {'index':'full_type'})

@@ -10,34 +10,30 @@ from score import get_score
 import yaml
 import json
 
-class PrometNoSpec(Promet):
+class PrometSpec(Promet):
     
     def train_model(self, model, input_ids, attention_mask, mask_ids, y, optimizer, loss_fn):
         optimizer.zero_grad()
         output = model(input_ids, attention_mask, mask_ids)
-        y = y.argmax(dim=1) #one_hot -> single label
-        loss = loss_fn(output, y)
+        loss = loss_fn(output, y.float())
         loss.backward()
         optimizer.step()
-        posterior = torch.softmax(output, dim=-1)
-        pred_label = posterior.argmax(dim=1)
-        # prediction in one-hot-encoding
-        pred = torch.zeros_like(posterior).scatter_(1, pred_label.unsqueeze(1), 1.)
+        posterior = torch.sigmoid(output)
+        # pred mulit-label without /other class
+        pred = torch.where(posterior >= 0.5, 1, 0)
         return pred.cpu(), loss.item()
 
     def eval_model(self, model, input_ids, attention_mask, mask_ids, y, loss_fn):
         output = model(input_ids, attention_mask, mask_ids)
         y = y.argmax(dim=1) #one_hot -> single label
-        loss = loss_fn(output, y)
-        posterior = torch.softmax(output, dim=-1)
-        pred_label = posterior.argmax(dim=1)
-        # prediction in one-hot-encoding
-        pred = torch.zeros_like(posterior).scatter_(1, pred_label.unsqueeze(1), 1.)
+        loss = loss_fn(output, y.float())
+        posterior = torch.sigmoid(output)
+        # pred mulit-label without /other class
+        pred = torch.where(posterior >= 0.5, 1, 0)
         return pred.cpu(), loss.item()
 
     def fit(self, train_examples, val_examples, y_train, y_val, lr, lambd, wd, epochs, 
-                batch_size, n_class, val_epoch=1, adapters=False):
-        
+                batch_size, n_class, val_epoch=1, adapters=False, plm_coarse=''):  
         self.n_class = n_class
         self.len_train = len(train_examples)
         self.len_val = len(val_examples)
@@ -47,9 +43,12 @@ class PrometNoSpec(Promet):
         train_loader = self.data_prompt_loader(train_examples, y_train, batch_size, shuffle=True)
         val_loader = self.data_prompt_loader(val_examples, y_val, batch_size, shuffle=False)
         # loss
-        loss_fn = nn.CrossEntropyLoss()
+        loss_fn = nn.BCEWithLogitsLoss()
         # init model
         model = promet_clf(self.plm_name, self.n_class, lambd=lambd)
+        # load plm trained on coarse types
+        if len(plm_coarse)>0:
+            model.plm.load_state_dict(torch.load(plm_coarse))
         # add adapters if needed
         if type(adapters)==bool and adapters==True:
             # create new_adapters
@@ -110,12 +109,23 @@ class PrometNoSpec(Promet):
         posterior = torch.cat(posterior)
         return posterior.cpu()
     
-    def predict(self, examples, verbose=True):
+    def predict(self, examples, threshold=None, verbose=True):
         logits = self.predict_logits(examples, verbose=verbose)
-        posterior = torch.softmax(logits, dim=-1)
-        pred_label = posterior.argmax(dim=1)
-        # prediction in one-hot-encoding
-        pred = torch.zeros_like(posterior).scatter_(1, pred_label.unsqueeze(1), 1.)
+        posterior = torch.sigmoid(posterior).numpy()
+        if not threshold:
+            # classification thresholds set to 0.5
+            clf_thresholds = np.repeat(0.5, posterior.shape[1])
+        # label prediction
+        pred = []
+        for i in range(posterior.shape[1]):
+            pred.append((posterior[:, i] >= clf_thresholds[i]) * 1)
+        pred = np.array(pred).T
+        # add /other vector (all zeros at the beginning)
+        pred = np.c_[pred, np.zeros(pred.shape[0])]
+        # if no specialization (i.e. all zeros in a row) -> inference /type/other
+        for y_hat in pred:
+            if np.count_nonzero(y_hat) == 0:
+                y_hat[-1] = 1
         return pred
 
 
@@ -151,18 +161,21 @@ if __name__ == "__main__":
     test_examples, y_test = import_examples(TEST_FILE)
     print('Data loaded')
     
+    # first classification layer (on coarse types)
+    print('FIRST LAYER')
+    # take only father type
+    y_train_c = np.array(['/' + label.split('/')[1] for label in y_train])
+    y_val_c = np.array(['/' + label.split('/')[1] for label in y_val])
+    y_val_c = np.array(['/' + label.split('/')[1] for label in y_val])
     # format target
-    (y_train, y_val, y_test), labels_names = one_hot_encoder(y_train, y_val, y_test)
-    # add fathers names
-    labels_names = np.array([['/' + label[0].split('/')[1], label[0]] for label in labels_names])
-    
+    (y_train_c, y_val_c, y_test_c), labels_names_c = one_hot_encoder(y_train_c, y_val_c, y_test_c, other_class='/other')
     # define model
     promet_nospec = PrometNoSpec(plm_name=PLM_NAME, n_mask=N_MASK, mask_token=MASK_TOKEN, 
-                           model_name='no_spec', save_dir=SAVE_DIR)
+                           model_name='first_layer', save_dir=SAVE_DIR)
     # fit mode
     print('Fit model')
-    promet_nospec.fit(train_examples, val_examples, y_train, y_val, LR, LAMBD, WD, EPOCHS, BATCH_SIZE,
-                      adapters=ADAPTERS, n_class=len(labels_names))
+    promet_nospec.fit(train_examples, val_examples, y_train_c, y_val_c, LR, LAMBD, WD, EPOCHS, BATCH_SIZE,
+                      adapters=ADAPTERS, n_class=len(labels_names_c)-1)
     
     # validation inference
     print('Validation inference:')
